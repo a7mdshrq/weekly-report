@@ -5,10 +5,65 @@ import json
 import shutil
 import subprocess
 from datetime import datetime
-from flask import Flask, render_template_string, send_from_directory, request, jsonify, abort
+from flask import Flask, render_template_string, send_from_directory, request, jsonify, abort, session, redirect, url_for
 from werkzeug.utils import secure_filename
+from functools import wraps
 
 app = Flask(__name__)
+
+app.secret_key = os.environ.get("SECRET_KEY", "qamat-secret-key-2024-please-change")
+APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "admin123")
+
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تسجيل الدخول - قامات</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&display=swap" rel="stylesheet">
+<style>
+body{font-family:'Cairo',sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:white;width:100%;max-width:400px;padding:35px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+h1{text-align:center;color:#0f172a;margin-bottom:5px}
+.sub{text-align:center;color:#64748b;margin-bottom:25px;font-size:14px}
+input{width:100%;padding:14px 15px;border:2px solid #e2e8f0;border-radius:12px;margin-bottom:15px;font-family:'Cairo';font-size:15px;outline:none;transition:.2s}
+input:focus{border-color:#3b82f6}
+.btn{width:100%;padding:14px;background:#2563eb;color:white;border:none;border-radius:12px;font-family:'Cairo';font-weight:800;font-size:16px;cursor:pointer;transition:.2s}
+.btn:hover{background:#1d4ed8}
+.err{background:#fee2e2;color:#b91c1c;padding:10px;border-radius:10px;margin-bottom:15px;text-align:center;font-size:14px}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>🔒 قامات</h1>
+<div class="sub">منظومة تقارير الجودة - تسجيل الدخول</div>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+<form method="POST">
+<input type="text" name="username" placeholder="اسم المستخدم" required>
+<input type="password" name="password" placeholder="كلمة المرور" required>
+<button class="btn" type="submit">دخول</button>
+</form>
+</div>
+</body>
+</html>
+"""
+
+@app.before_request
+def require_login():
+    allowed = ('login', 'serve_logo')
+    if request.endpoint in allowed:
+        return None
+    if request.path.startswith('/logos/'):
+        return None
+    if request.path == '/login':
+        return None
+    if not session.get('logged_in'):
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "غير مصرح"}), 401
+        return redirect(url_for('login'))
+
 app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -27,6 +82,26 @@ for _n, _b in _WK_IMAGES.items():
                 _f.write(base64.b64decode(_b))
         except OSError:
             pass
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        u = request.form.get('username','').strip()
+        p = request.form.get('password','').strip()
+        if u == APP_USERNAME and p == APP_PASSWORD:
+            session['logged_in'] = True
+            session['username'] = u
+            return redirect(url_for('index'))
+        else:
+            error = 'اسم المستخدم أو كلمة المرور غلط'
+    return render_template_string(LOGIN_HTML, error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 @app.route('/logos/<filename>')
 def serve_logo(filename):
